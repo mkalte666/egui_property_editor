@@ -1,0 +1,16 @@
+[package]
+name = "egui_property_editor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+egui = "0.31"
+
+[dev-dependencies]
+eframe = {version = "0.31", features=["glow","wgpu"]}
+
+[lints.rust]
+missing_docs = "warn"
+
+[lints.clippy]
+missing_docs_in_private_items = "warn"
