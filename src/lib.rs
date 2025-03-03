@@ -119,11 +119,12 @@ impl<'a> PropertyEditor<'a> {
                         grid
                     };
                     grid.show(ui, |ui| {
-                        validation_result = validation_result & p.draw(ui);
+                        validation_result = validation_result & p.draw(ui, self.show_descriptions);
                         loop {
                             match entries.next_if(|e| matches!(e, EditorLine::Property(_))) {
                                 Some(EditorLine::Property(p)) => {
-                                    validation_result = validation_result & p.draw(ui);
+                                    validation_result =
+                                        validation_result & p.draw(ui, self.show_descriptions);
                                 }
                                 _ => break,
                             }
@@ -225,7 +226,13 @@ impl PropertyEditorStore {
 }
 
 type PropertyWidgetFn<'a> = dyn FnOnce(&mut Ui) -> Response + 'a;
-type PropertyDrawFn<'a> = dyn FnOnce(&mut Ui, Option<WidgetText>, Option<WidgetText>, Result<(), ValidationError>) -> bool
+type PropertyDrawFn<'a> = dyn FnOnce(
+        &mut Ui,
+        Option<WidgetText>,
+        Option<WidgetText>,
+        Result<(), ValidationError>,
+        bool,
+    ) -> bool
     + 'a;
 
 pub struct Property<'a> {
@@ -240,8 +247,8 @@ impl<'a> Property<'a> {
         Self {
             name: None,
             description: None,
-            draw_fn: Box::new(|ui, name, descr, valid| {
-                default_property_draw_fn(ui, name, descr, valid, Box::new(cb))
+            draw_fn: Box::new(|ui, name, descr, valid, draw_descr| {
+                default_property_draw_fn(ui, name, descr, valid, draw_descr, Box::new(cb))
             }),
             validation_result: Ok(()),
         }
@@ -254,7 +261,7 @@ impl<'a> Property<'a> {
         default: T,
         property_cb: impl FnOnce(&'a mut T) -> PropertyList<'a> + 'a,
     ) -> Self {
-        let custom_draw_fn = move |ui: &mut Ui, name, description, _| -> bool {
+        let custom_draw_fn = move |ui: &mut Ui, name, description, _, draw_descr| -> bool {
             let mut cb = value.is_some();
             if let Some(name) = name {
                 ui.label(name);
@@ -262,8 +269,12 @@ impl<'a> Property<'a> {
                 ui.label("");
             }
             ui.checkbox(&mut cb, "");
-            if let Some(description) = description {
-                ui.label(description);
+            if draw_descr {
+                if let Some(description) = description {
+                    ui.label(description);
+                } else {
+                    ui.label("");
+                }
             }
             ui.end_row();
 
@@ -277,7 +288,7 @@ impl<'a> Property<'a> {
             let mut inner_validation_result = true;
             if let Some(val) = value {
                 for p in property_cb(val) {
-                    inner_validation_result = inner_validation_result & p.draw(ui);
+                    inner_validation_result = inner_validation_result & p.draw(ui, draw_descr);
                 }
             }
 
@@ -305,8 +316,14 @@ impl<'a> Property<'a> {
         }
     }
 
-    fn draw(self, ui: &mut Ui) -> bool {
-        (self.draw_fn)(ui, self.name, self.description, self.validation_result)
+    fn draw(self, ui: &mut Ui, draw_description: bool) -> bool {
+        (self.draw_fn)(
+            ui,
+            self.name,
+            self.description,
+            self.validation_result,
+            draw_description,
+        )
     }
 }
 
@@ -436,6 +453,7 @@ fn default_property_draw_fn<'a>(
     name: Option<WidgetText>,
     description: Option<WidgetText>,
     validation_result: Result<(), ValidationError>,
+    draw_description: bool,
     widget_cb: Box<PropertyWidgetFn<'a>>,
 ) -> bool {
     if let Some(name) = name {
@@ -446,8 +464,12 @@ fn default_property_draw_fn<'a>(
 
     let resp = widget_cb(ui);
 
-    if let Some(description) = description {
-        ui.label(description);
+    if draw_description {
+        if let Some(description) = description {
+            ui.label(description);
+        } else {
+            ui.label("");
+        }
     }
 
     ui.end_row();
