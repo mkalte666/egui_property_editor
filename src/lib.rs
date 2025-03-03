@@ -1,3 +1,29 @@
+//! # A property editor for egui
+//!
+//! This crate is a property editor for egui with minimal dependencies.
+//!
+//! # Usage
+//!
+//! The `PropertyEditor` itself follows somewhat of a builder pattern, where you create it, then add properties to it, and finally draw it.
+//! ```
+//! # use egui_property_editor::PropertyEditor;
+//! # egui::__run_test_ui(|ui| {
+//!     let mut property_1 = false;
+//!     let mut property_2 = 123;
+//!     PropertyEditor::new("my property editor")
+//!         // change some properties
+//!         .stripes(true)
+//!         .outer_border(true)
+//!         // add headlines to sections
+//!         .headline("I am a headline")
+//!         // Add some properties
+//!         .named_property("A checkbox", &mut property_1)
+//!         // Property lives off of `Into<Property>`, have a look at the `Property` docs to see what converts seamlessly.
+//!         .property(("A number",&mut property_2))
+//!         // and finally show it
+//!         .show(ui);
+//! # });
+//! ```
 use egui::emath::Align;
 use egui::{
     Align2, Color32, Context, Direction, DragValue, FontId, Grid, Id, Layout, Rect, Response,
@@ -5,6 +31,9 @@ use egui::{
 };
 use std::fmt::{Display, Formatter};
 
+/// A property editor is a builder that combines multiple `Property`s and drawing-related settings.
+///
+/// See the crate level documentation for a rough example, functions for details, and `examples/demo.rs` for detailed usage with comments.
 pub struct PropertyEditor<'a> {
     id: Id,
     show_descriptions: bool,
@@ -16,6 +45,7 @@ pub struct PropertyEditor<'a> {
 }
 
 impl<'a> PropertyEditor<'a> {
+    /// Create a new property editor, using `id_source` as a salt for the persistent id.
     pub fn new(id_source: impl Into<Id>) -> Self {
         Self {
             id: id_source.into(),
@@ -28,8 +58,12 @@ impl<'a> PropertyEditor<'a> {
         }
     }
 
+    /// Show the property editor, consuming it.
+    ///
+    /// Will return `true` if all properties validated `Ok(())`, or `false` if one or more shows an error.
     pub fn show(mut self, ui: &mut Ui) -> bool {
-        let mut store = PropertyEditorStore::load(ui.ctx(), self.id).unwrap_or_default();
+        let persistent_id = ui.make_persistent_id(self.id);
+        let mut store = PropertyEditorStore::load(ui.ctx(), persistent_id).unwrap_or_default();
         // the property editor is always left to right
         // however its position might vary depending on the layout.
         // The first pass must be left to right though, or we would not know the required size.
@@ -91,11 +125,13 @@ impl<'a> PropertyEditor<'a> {
         }
         store.first_pass = false;
         store.last_width = final_rect.width();
-        store.store(ui.ctx(), self.id);
+        store.store(ui.ctx(), persistent_id);
 
         validation_result
     }
 
+    /// Shows the inner ui (i.e inside a possible border) for this.
+    ///
     fn inner_ui(&mut self, ui: &mut Ui) -> bool {
         let mut validation_result = true;
         let mut entries = std::mem::take(&mut self.entries).into_iter().peekable();
@@ -137,25 +173,40 @@ impl<'a> PropertyEditor<'a> {
         validation_result
     }
 
+    /// Set to `true` if you want the inner grid to show stripes.
     pub fn stripes(mut self, show_stripes: bool) -> Self {
         self.show_stripes = show_stripes;
         self
     }
 
+    /// Set to `true` if you want to show a border around the whole property editor.
     pub fn outer_border(mut self, outer_border: bool) -> Self {
         self.group_all = outer_border;
         self
     }
 
+    /// If you set this to some, will provide the inner grid with a minimal col width.
+    /// Will look more aligned, but will of course also consume a bit more space.
     pub fn min_col_width(mut self, min_col_width: Option<f32>) -> Self {
         self.min_column_width = min_col_width;
         self
     }
+
+    /// Add a headline.
+    ///
+    /// As with all content-adding functions, insertion order matters.
     pub fn headline(mut self, text: impl Into<WidgetText>) -> Self {
         self.entries.push(EditorLine::Headline(text.into()));
         self
     }
 
+    /// Add a property and assign it a name.
+    ///
+    /// As with all content-adding functions, insertion order matters.
+    ///
+    /// This is the same as creating it first, then calling `Property::name` on it, and then adding it with `PropertyEditor::property`.
+    ///
+    /// This takes a `Into<Property>`, so look at the `Property` docs to see what is possible.
     pub fn named_property(
         self,
         name: impl Into<WidgetText>,
@@ -165,6 +216,11 @@ impl<'a> PropertyEditor<'a> {
         self.property(property)
     }
 
+    /// Add a property.
+    ///
+    /// As with all content-adding functions, insertion order matters.
+    ///
+    /// This takes a `Into<Property>`, so look at the `Property` docs to see what is possible.
     pub fn property(mut self, property: impl Into<Property<'a>>) -> Self {
         let property = property.into();
         self.show_descriptions = self.show_descriptions || property.description.is_some();
@@ -172,6 +228,15 @@ impl<'a> PropertyEditor<'a> {
         self
     }
 
+    /// Adds a property for an `Option<T>`.
+    ///
+    /// This function does two things:
+    ///   * Create a checkbox, that sets the `Option<T>` to Some or None, using `default` to init.
+    ///   * If the property is `Some`, calls `property_cb` with `&mut T`, which then can return one or more `Property`s in a `PropertyList`.
+    ///
+    /// To nest this, you can also create an optional property directly using `Property::new_optional`.
+    ///
+    /// For a detailed usage example, look at `examples/demo.rs`.
     pub fn optional_property<T>(
         self,
         name: impl Into<WidgetText>,
@@ -188,6 +253,7 @@ impl<'a> PropertyEditor<'a> {
         ))
     }
 
+    /// Same as `Property::optional_property`, but with `T` implementing `Default` and using that instead of manually specifying that.
     pub fn optional_property_default<T: Default>(
         self,
         name: impl Into<WidgetText>,
@@ -204,29 +270,46 @@ impl<'a> PropertyEditor<'a> {
     }
 }
 
+/// The internal storage the differentiates actual properties from section headlines
 enum EditorLine<'a> {
+    /// A headline, i.e. a section introducing text
     Headline(WidgetText),
+    /// The actual property contents
     Property(Property<'a>),
 }
 
+/// The persistent memory needed to draw this whole thing
 #[derive(Debug, Clone, Default)]
 struct PropertyEditorStore {
+    /// False on the first pass, used for discarding
     first_pass: bool,
+    /// Used for ui allocation.
     last_width: f32,
 }
 
 impl PropertyEditorStore {
+    /// Loads from temp storage
     pub fn load(ctx: &Context, id: Id) -> Option<Self> {
         ctx.data(|d| d.get_temp(id))
     }
 
+    /// Stores to temp storage
     pub fn store(self, ctx: &Context, id: Id) {
         ctx.data_mut(|d| d.insert_temp(id, self));
     }
 }
 
-type PropertyWidgetFn<'a> = dyn FnOnce(&mut Ui) -> Response + 'a;
-type PropertyDrawFn<'a> = dyn FnOnce(
+/// The simpler of the two callback types for custom widget drawing.
+///
+/// Takes a &mut ui, returns a widget response.
+pub type PropertyWidgetFn<'a> = dyn FnOnce(&mut Ui) -> Response + 'a;
+
+/// The more complex, somewhat internal, drawing function.
+///
+/// Do not use if you can avoid it.
+///
+/// Takes all Property data and draws the thing. Do not forget to call `ui.next_row()` :)
+pub type PropertyDrawFn<'a> = dyn FnOnce(
         &mut Ui,
         Option<WidgetText>,
         Option<WidgetText>,
@@ -235,6 +318,75 @@ type PropertyDrawFn<'a> = dyn FnOnce(
     ) -> bool
     + 'a;
 
+/// An editable property.
+///
+/// A property can have a name and a description. It is drawn in a single row in a grid.
+///
+/// # Into property
+///
+/// There is an implementation of `From<T> for Property` for more or less all basic types, and `String`.
+///   * `&mut u8,i8,..,f32,f64` integer and floating point types will become a `DragValue`.
+///   * `&mut String` will become a single line edit.
+///   * `&mut bool` will become a checkbox.
+///
+/// Additionally, two element tuples `(N, T)` where `N` is a `Into<WidgetText>` and `T` is a `Into<Property>` are equivalent to
+/// ```ignore
+///     let t = todo!("from somewhere");
+///     t.into().name(n.into());
+/// ```
+/// And the same is true for three element tuples, with `(N,T,D)`, where `D` is an `Into<WidgetText>` for a description.
+///
+/// So you can do things like
+/// ```ignore
+///    PropertyEditor::new("editor")
+///      .property(("name",&mut something))
+///      .property(("else",&mut something_else, "description of else"));
+/// ```
+///
+/// # Custom Widgets
+///
+/// If you want to create a property with a custom widget, you can create it with `Property::from_widget_fn`.
+///
+/// Note that the widget fn needs to follow `PropertyWidgetFn` (which is `FnOnce(&mut egui::Ui) -> egui::Response`).
+///
+/// You should only add *one* ui widget. If you need more, group them using layouts. The returned response is used to draw error highlighting.
+///
+/// # Custom Draw
+///
+/// **This is not recommended!**
+///
+/// You can also create a property with complete custom drawing.
+///
+/// This is mainly exposed due to the enum macros making use of it, but may be useful to some users as well.
+///
+/// In the end, the drawing is just a Boxed function that captures the mut ref to what will be modified.
+///
+/// It uses `PropertyDrawFn` - which has the following signature:
+///```ignore
+///pub type PropertyDrawFn<'a> = dyn FnOnce(
+///         &mut Ui,
+///         Option<WidgetText>,
+///         Option<WidgetText>,
+///         Result<(), ValidationError>,
+///         bool,
+///     ) -> bool
+///     + 'a
+///```
+///
+/// The first parameters is the target ui, followed by an optional name, description, the result of the validation (see `Validation` above), and bool indicating if there is a thrid column for the description in the first place.
+/// The return value is "did validation succeed or not".
+///
+/// You need to
+///   * Check if the name exists, and otherwise draw it empty.
+///   * Draw your widget.
+///   * Check if there is a description column. If yes, check if the description is there, or draw it empty. If not, there is no thrid column.
+///   * `ui.end_row()` **is your responsibility when providing a custom draw function.**
+///   * In the end, you must return true of false, indicating if the validation result is ok or not.
+///
+/// The end-row-point is why this function is a bit of a (visual) footgun. However, it allows you too add additional lines after this.
+/// The enum macros and `Property::new_optional` use this to add content after initial combo boxes or checkboxes.
+///
+/// For detailed use, i recommend reading the source.
 pub struct Property<'a> {
     name: Option<WidgetText>,
     description: Option<WidgetText>,
@@ -243,6 +395,7 @@ pub struct Property<'a> {
 }
 
 impl<'a> Property<'a> {
+    /// Create a new property from a callback that adds a widget to Ui, and returns the response of it.
     pub fn from_widget_fn(cb: impl FnOnce(&mut Ui) -> Response + 'a) -> Self {
         Self {
             name: None,
@@ -254,6 +407,23 @@ impl<'a> Property<'a> {
         }
     }
 
+    /// Create a widget, but use custom drawing instead. Read the top level comment of `Property` (and, honestly, the source code of this file) for a detailed use of this.
+    ///
+    /// You probably do not wanna use this.
+    pub fn from_custom_draw_fn(cb: Box<PropertyDrawFn<'a>>) -> Self {
+        Self {
+            name: None,
+            description: None,
+            draw_fn: cb,
+            validation_result: Ok(()),
+        }
+    }
+
+    /// For an `Option<T>`, create a new `Property` with a checkbox.
+    ///
+    /// If the checkbox is ticked, and thus `Option<T>` is `Some`, call `property_cb` with the inner `&mut T`.
+    ///
+    /// `property_cb` then returns a `PropertyList` - a `Vec<Property>` with zero or more properties for T.
     pub fn new_optional<T>(
         name: impl Into<WidgetText>,
         description: Option<impl Into<WidgetText>>,
@@ -302,6 +472,7 @@ impl<'a> Property<'a> {
         }
     }
 
+    /// Builder-style function to set the name of this property.
     pub fn name(self, name: impl Into<WidgetText>) -> Self {
         Self {
             name: Some(name.into()),
@@ -309,6 +480,7 @@ impl<'a> Property<'a> {
         }
     }
 
+    /// Builder-style function to set the description of this property.
     pub fn description(self, description: impl Into<WidgetText>) -> Self {
         Self {
             description: Some(description.into()),
@@ -316,7 +488,12 @@ impl<'a> Property<'a> {
         }
     }
 
-    fn draw(self, ui: &mut Ui, draw_description: bool) -> bool {
+    /// Draw this property. Usually, you would not want to call this.
+    /// Here be dragons etc.
+    ///
+    /// The only really valid place to call this in your code is if you have a custom drawing function, and let it produce additional properties.
+    /// You would then want to draw these after your initial `ui.end_row()`. See the `Property` docs for this as well.
+    pub fn draw(self, ui: &mut Ui, draw_description: bool) -> bool {
         (self.draw_fn)(
             ui,
             self.name,
@@ -327,11 +504,15 @@ impl<'a> Property<'a> {
     }
 }
 
-type PropertyList<'a> = Vec<Property<'a>>;
+/// An alias for `Vec<Property>` to recue `<>` in my code just a bit.
+pub type PropertyList<'a> = Vec<Property<'a>>;
 
-#[derive(Debug)]
+/// Should validation fail, these are the ways it will do so.
+#[derive(Debug, Clone, PartialEq)]
 pub enum ValidationError {
+    /// A generic out of range message will be shown
     OutOfRange,
+    /// A custom message
     CustomWithMessage(String),
 }
 
@@ -348,6 +529,9 @@ impl Display for ValidationError {
     }
 }
 
+/// The helper struct for property validation.
+///
+/// See the `Validation` section inside the docs of `Property` and have a look at `examples/demo.rs` for a usage example.
 pub struct ValidatedProperty<'a, T> {
     value: T,
     validation_cb: Box<dyn FnOnce(&T) -> Result<(), ValidationError> + 'a>,
@@ -362,6 +546,33 @@ impl<'a, T: 'a> ValidatedProperty<'a, T> {
         }
     }
 
+    /// Creates a new validated property.
+    ///
+    /// The `validation_cb` is immediately called to populate the inner result.
+    ///
+    /// You can then transform this into a normal property with a custom widget function using `ValidatedProperty::with_widget_cb`.
+    ///
+    /// There is an `From<T> for Property` implementation for `ValidatedProperty`, as long T has that as well.
+    /// So, this will work:
+    ///
+    /// ```
+    /// # use egui_property_editor::{PropertyEditor, ValidatedProperty, ValidationError};
+    /// # egui::__run_test_ui(|ui| {
+    ///     let mut value = 123;
+    ///     let _are_all_ok = PropertyEditor::new("editor")
+    ///     .property(
+    ///         ("this one is validated",
+    ///         ValidatedProperty::new(&mut value, |val| {
+    ///             // double deref due to this being a ref to a &mut
+    ///             if **val == 0 {
+    ///                Err((ValidationError::OutOfRange))
+    ///             } else {
+    ///                 Ok(())
+    ///             }
+    ///         })))
+    ///     .show(ui);
+    /// # })
+    /// ```
     pub fn new(
         value: T,
         validation_cb: impl FnOnce(&T) -> Result<(), ValidationError> + 'a,
@@ -372,6 +583,7 @@ impl<'a, T: 'a> ValidatedProperty<'a, T> {
         }
     }
 
+    /// Turns this `ValidatedProperty` into a `Property` with a custom widget.
     pub fn with_widget_cb(self, cb: impl FnOnce(T, &mut Ui) -> Response + 'a) -> Property<'a> {
         Property {
             validation_result: (self.validation_cb)(&self.value),
@@ -403,7 +615,7 @@ macro_rules! numeric_impl {
     }
 }
 
-numeric_impl!(u8, i8, u16, i16, u32, i32, u64, i64, usize, f32, f64);
+numeric_impl!(u8, i8, u16, i16, u32, i32, u64, i64, usize, isize, f32, f64);
 
 impl<'a> From<&'a mut bool> for Property<'a> {
     fn from(value: &'a mut bool) -> Self {
@@ -494,4 +706,177 @@ fn default_property_draw_fn<'a>(
         }
         Ok(_) => true,
     }
+}
+
+/// A helper macro to generate a property for a unit enum.
+///
+/// The rough syntax to use here is
+///
+/// `unit_enum_property!(<variable>, <variant to include 1>, <variant to include 2>, ...);`
+///
+/// This will generate a `Property` that you can then use as expected.
+///
+/// # Example usage
+/// ```
+/// # use egui_property_editor::unit_enum_property;
+///
+/// enum UnitEnum {
+///     A,
+///     B
+/// }
+///
+/// impl std::fmt::Display for UnitEnum {
+///     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+///         match self {
+///             UnitEnum::A => write!(f,"A"),
+///             UnitEnum::B => write!(f,"B"),
+///         }
+///     }
+/// }
+///
+/// let mut my_enum = UnitEnum::A;
+/// let _property = egui_property_editor::unit_enum_property!(my_enum,
+///     UnitEnum::A,
+///     UnitEnum::B,
+/// );
+/// ```
+#[macro_export]
+macro_rules! unit_enum_property {
+    ($value:expr, $($name:path),+ $(,)?) => {
+         unit_enum_property!(@inner $value, $([$value] => [$name]),*)
+    };
+    (@inner $value:expr, $([$($value_tt:tt)*] => [$($name_tt:tt)*]),*) => {
+        $crate::Property::from_widget_fn(|ui| {
+            egui::ComboBox::new(ui.next_auto_id(),"")
+            .selected_text($value.to_string())
+            .show_ui(ui,|ui| {
+                $(
+                    if ui.selectable_label(matches!($($value_tt)*,$($name_tt)*),$($name_tt)*.to_string()).clicked() {
+                        $value = $($name_tt)*;
+                    };
+                )*
+            }).response
+        })
+    };
+}
+
+/// enum_property is unit_enum_propertys big brother.
+/// You can use it to generate properties on value enums.
+///
+/// # Custom display function
+/// If your enum implements `std::fmt::Display`, and you like its output, you can omit the second argument.
+/// However, if you want to change that, you can use a custom display function.
+/// This can either be a reference to a trait method, or a free function.
+///
+/// i.e. `std::string::ToString::to_string` is fine, `my_string_fn` is fine, however `|x| x.my_fn()` would not be.
+///
+/// Take a look at `examples/demo.rs`, where i tried to show why you'd wanna use that.
+///
+/// # Example with syntax explaination
+/// ```rust
+/// # use egui_property_editor::enum_property;
+/// enum Your {
+///     Variant1,
+///     Variant(i32,i32),
+///     Named{fields: i32}
+/// }
+///
+/// # impl std::fmt::Display for Your {
+/// # fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+/// #    write!(f,"")
+/// # }
+/// # }
+///
+/// let mut my_enum = Your::Variant1;
+/// let property = enum_property!(
+///     my_enum, // variable to use
+///     // You could add a display function here.
+///     // Note that you cannot add a closure, it must be a free function. See notes above.
+///     // `my_example_string_formatter`,
+///     Your::Variant1 => {
+///         default: Your::Variant1; // Value to use when picking this in the dropdown. Will not overwrite if it already matches.
+///         properties: {
+///             // Generate a PropertyList here
+///             vec![] // Empty is fine
+///         }; // This ; is optional
+///     }, // Comma is required, sorry.
+///     // it hands you the fields as &mut
+///     Your::Variant(with,fields) => {
+///         default: Your::Variant(1,2);
+///         properties: {
+///             [
+///                 ("with",with).into(),
+///                 ("fields",fields).into(),
+///             ].into()
+///         }
+///     }
+/// );
+/// ```
+#[macro_export]
+macro_rules! enum_property {
+    ($value:expr, $($name:pat => {
+        default: $default:expr;
+        properties: $property_block:block$(;)?
+    }
+    ),+ $(,)*) => {
+        enum_property!($value, std::string::ToString::to_string, $($name => {
+            default: $default;
+            properties: $property_block;
+        },)+)
+    };
+    ($value:expr, $display_fn:expr, $($name:pat => {
+        default: $default:expr;
+        properties: $property_block:block$(;)?
+    }
+    ),+ $(,)*) => {
+        $crate::Property::from_custom_draw_fn(Box::new(|ui,name,description,validation_result,include_description| {
+            if let Some(name) = name {
+                ui.label(name);
+            } else {
+                ui.label("");
+            }
+
+            egui::ComboBox::new(ui.next_auto_id(),"")
+            .selected_text($display_fn(&$value))
+            .show_ui(ui,|ui| {
+                $(
+                    {
+                        let checked = match $value {
+                            #[allow(unused)]
+                            $name => true,
+                            _ => false,
+                        };
+                        let name = $display_fn(&$default);
+                        if ui.selectable_label(checked,name).clicked() {
+                            // do not reset if we click on an already clicked one
+                            if !checked {
+                                $value = $default
+                            }
+                        }
+                    }
+                )*
+            });
+
+            if include_description {
+                if let Some(description) = description {
+                    ui.label(description);
+                } else {
+                    ui.label("");
+                }
+            }
+            ui.end_row();
+
+            let p_list : $crate::PropertyList = match &mut $value {
+                $($name => $property_block)*
+                _ => vec![],
+            };
+
+            let mut valid = true;
+            for property in p_list {
+                valid = property.draw(ui,include_description) & valid;
+            }
+
+            valid
+        }))
+    };
 }

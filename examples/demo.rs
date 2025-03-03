@@ -1,8 +1,12 @@
 //! A demo for the egui_property_editor
+
 use eframe::Frame;
 use eframe::emath::Align;
-use egui::{CentralPanel, Context, Layout, RichText, ScrollArea};
-use egui_property_editor::{Property, PropertyEditor, ValidatedProperty, ValidationError};
+use egui::{CentralPanel, ComboBox, Context, Layout, RichText, ScrollArea};
+use egui_property_editor::{
+    Property, PropertyEditor, ValidatedProperty, ValidationError, enum_property, unit_enum_property,
+};
+use std::fmt::Formatter;
 
 /// Entry point for the eframe app
 fn main() {
@@ -30,6 +34,10 @@ struct App {
     a_bool: bool,
     something_optional: Option<String>,
     optional_struct: Option<InnerThingWithDefault>,
+    selection: UnitEnum,
+    selection2: UnitEnum,
+    value_enum: ValueEnum,
+    value_enum2: ValueEnum,
 }
 
 #[derive(Debug, Default)]
@@ -37,6 +45,44 @@ struct App {
 struct InnerThingWithDefault {
     string: String,
     number: i32,
+}
+
+#[derive(Debug, PartialEq)]
+enum UnitEnum {
+    OptionA,
+    OptionB,
+    OptionC,
+}
+
+impl std::fmt::Display for UnitEnum {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                UnitEnum::OptionA => "Option A",
+                UnitEnum::OptionB => "Option B",
+                UnitEnum::OptionC => "Option C",
+            }
+        )
+    }
+}
+
+#[derive(Debug)]
+enum ValueEnum {
+    Nothing,
+    Something(i32),
+    More { a: i32, b: i32 },
+}
+
+impl std::fmt::Display for ValueEnum {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValueEnum::Nothing => write!(f, "Nothing"),
+            ValueEnum::Something(val) => write!(f, "Something: {val}"),
+            ValueEnum::More { .. } => write!(f, "More"),
+        }
+    }
 }
 
 impl App {
@@ -60,6 +106,10 @@ impl Default for App {
             a_bool: false,
             something_optional: None,
             optional_struct: None,
+            selection: UnitEnum::OptionA,
+            selection2: UnitEnum::OptionA,
+            value_enum: ValueEnum::Nothing,
+            value_enum2: ValueEnum::Nothing,
         }
     }
 }
@@ -183,6 +233,92 @@ impl eframe::App for App {
                                 .into()
                             },
                         )
+                        // Next up: Enums. Unit enums are same as everywhere - rather simple combo boxes. You can just add that manually...
+                        .property((
+                            "enum, manually drawn",
+                            Property::from_widget_fn(|ui| {
+                                ComboBox::new("manually drawn combo", "")
+                                    .selected_text(self.selection.to_string())
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(
+                                            &mut self.selection,
+                                            UnitEnum::OptionA,
+                                            UnitEnum::OptionA.to_string(),
+                                        );
+                                        ui.selectable_value(
+                                            &mut self.selection,
+                                            UnitEnum::OptionB,
+                                            UnitEnum::OptionB.to_string(),
+                                        );
+                                        ui.selectable_value(
+                                            &mut self.selection,
+                                            UnitEnum::OptionC,
+                                            UnitEnum::OptionC.to_string(),
+                                        );
+                                    })
+                                    .response
+                            }),
+                        ))
+                        // However, as long as the enum implements Display, you can use this helper
+                        .property((
+                            "enum, with helper",
+                            unit_enum_property!(
+                                self.selection2,
+                                UnitEnum::OptionA,
+                                UnitEnum::OptionB,
+                                UnitEnum::OptionC
+                            ),
+                        ))
+                        // While you can manually do value enums, id not.
+                        // You *still* need to impl display for this, or provide a display fn.
+                        .property((
+                            "value enum",
+                            enum_property!(self.value_enum,
+                                ValueEnum::Nothing => {
+                                    default: ValueEnum::Nothing;
+                                    properties: {
+                                        vec![]
+                                    };
+                                },
+                                ValueEnum::Something(val) => {
+                                    default: ValueEnum::Something(123);
+                                    properties: {
+                                        // this block eventually just hands you val.
+                                        // PropertyList is our goal here
+                                        // You will get mut refs here, so this is fine:
+                                        vec![("The value of Something",val).into()]
+                                    }
+                                },
+                                ValueEnum::More{a,b} => {
+                                    default: ValueEnum::More{a: 12, b: 34};
+                                    properties: {[
+                                        ("a",a).into(),
+                                        ("b",b,"b descr").into(),
+                                    ].into()}
+                                }
+                            ),
+                        ))
+                        // So for example, ValueEnums Display impl includes Somethings number. Dont want that?
+                        .property((
+                            "custom display",
+                            enum_property!(
+                                self.value_enum2,
+                                custom_to_string,
+                                ValueEnum::Nothing => {
+                                    default: ValueEnum::Nothing;
+                                    properties: {
+                                        vec![]
+                                    }
+                                },
+                                ValueEnum::Something(val) => {
+                                    default: ValueEnum::Something(4321);
+                                    properties: {
+                                        [("something",val).into()].into()
+                                    }
+                                }
+                                // you can also leave out properties. They will then not appear.
+                            ),
+                        ))
                         .show(ui);
                     if second_valid {
                         ui.label("Second property editor was valid");
@@ -206,5 +342,12 @@ impl eframe::App for App {
                 });
             });
         });
+    }
+}
+
+fn custom_to_string(val: &ValueEnum) -> String {
+    match val {
+        ValueEnum::Something(_) => "Something".to_string(),
+        rest => rest.to_string(),
     }
 }
