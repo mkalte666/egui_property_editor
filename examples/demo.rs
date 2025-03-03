@@ -48,6 +48,7 @@ struct InnerThingWithDefault {
 }
 
 #[derive(Debug, PartialEq)]
+#[allow(clippy::missing_docs_in_private_items)]
 enum UnitEnum {
     OptionA,
     OptionB,
@@ -69,6 +70,7 @@ impl std::fmt::Display for UnitEnum {
 }
 
 #[derive(Debug)]
+#[allow(clippy::missing_docs_in_private_items)]
 enum ValueEnum {
     Nothing,
     Something(i32),
@@ -345,6 +347,7 @@ impl eframe::App for App {
     }
 }
 
+/// This function is an example for a free to_string replacement. Use something like this if you do not like the normal display behaviour of your type.
 fn custom_to_string(val: &ValueEnum) -> String {
     match val {
         ValueEnum::Something(_) => "Something".to_string(),

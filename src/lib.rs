@@ -35,12 +35,19 @@ use std::fmt::{Display, Formatter};
 ///
 /// See the crate level documentation for a rough example, functions for details, and `examples/demo.rs` for detailed usage with comments.
 pub struct PropertyEditor<'a> {
+    /// The id salt to make memory persistent.
     id: Id,
+    /// If any added properties have a description, this becomes true and indicates we need the thrid column.
     show_descriptions: bool,
+    /// If the grid stripes are shown.
     show_stripes: bool,
+    /// If the whole thing gets an outer border.
     group_all: bool,
+    /// If this is Some, the grids get a minimum col width
     min_column_width: Option<f32>,
+    /// The spacing of the headline entry. Might not be followed 100%.
     headline_spacing: Vec2,
+    /// The list of entries used by this editor.
     entries: Vec<EditorLine<'a>>,
 }
 
@@ -155,12 +162,13 @@ impl<'a> PropertyEditor<'a> {
                         grid
                     };
                     grid.show(ui, |ui| {
-                        validation_result = validation_result & p.draw(ui, self.show_descriptions);
+                        validation_result &= p.draw(ui, self.show_descriptions);
+                        // usually id agree, but this is more readable IMO.
+                        #[allow(clippy::while_let_loop)]
                         loop {
                             match entries.next_if(|e| matches!(e, EditorLine::Property(_))) {
                                 Some(EditorLine::Property(p)) => {
-                                    validation_result =
-                                        validation_result & p.draw(ui, self.show_descriptions);
+                                    validation_result &= p.draw(ui, self.show_descriptions);
                                 }
                                 _ => break,
                             }
@@ -182,6 +190,12 @@ impl<'a> PropertyEditor<'a> {
     /// Set to `true` if you want to show a border around the whole property editor.
     pub fn outer_border(mut self, outer_border: bool) -> Self {
         self.group_all = outer_border;
+        self
+    }
+
+    /// Set the headline spacing, that is the distance of the headline to things.
+    pub fn headline_spacing(mut self, spacing: impl Into<Vec2>) -> Self {
+        self.headline_spacing = spacing.into();
         self
     }
 
@@ -388,9 +402,13 @@ pub type PropertyDrawFn<'a> = dyn FnOnce(
 ///
 /// For detailed use, i recommend reading the source.
 pub struct Property<'a> {
+    /// The name of the property
     name: Option<WidgetText>,
+    /// The description of this property
     description: Option<WidgetText>,
+    /// The dynamic drawing function that will eventually be consumed to draw this property
     draw_fn: Box<PropertyDrawFn<'a>>,
+    /// The result of a validation operation. Will usually be `Ok(())`, except if the `Property` is created out of a `ValidatedProperty`.
     validation_result: Result<(), ValidationError>,
 }
 
@@ -458,7 +476,7 @@ impl<'a> Property<'a> {
             let mut inner_validation_result = true;
             if let Some(val) = value {
                 for p in property_cb(val) {
-                    inner_validation_result = inner_validation_result & p.draw(ui, draw_descr);
+                    inner_validation_result &= p.draw(ui, draw_descr);
                 }
             }
 
@@ -529,12 +547,17 @@ impl Display for ValidationError {
     }
 }
 
+/// The callback type used by validation callbacks.
+pub type ValidationCb<'a, T> = dyn FnOnce(&T) -> Result<(), ValidationError> + 'a;
+
 /// The helper struct for property validation.
 ///
 /// See the `Validation` section inside the docs of `Property` and have a look at `examples/demo.rs` for a usage example.
 pub struct ValidatedProperty<'a, T> {
+    /// The value to be validated
     value: T,
-    validation_cb: Box<dyn FnOnce(&T) -> Result<(), ValidationError> + 'a>,
+    /// The callback that validates `value`
+    validation_cb: Box<ValidationCb<'a, T>>,
 }
 
 impl<'a, T: 'a> ValidatedProperty<'a, T> {
@@ -598,6 +621,7 @@ impl<'a> From<&'a mut String> for Property<'a> {
     }
 }
 
+/// A helper macro to add `From<T>` to `Property` for primitive types that allow `egui::DragValue`.
 macro_rules! numeric_impl {
     ($t:ty) => {
         impl<'a> From<&'a mut $t> for Property<'a>
@@ -656,17 +680,19 @@ where
     }
 }
 
+/// The default validation function just validates to `Ok(())`
 fn default_validation_cb<T>(_val: &T) -> Result<(), ValidationError> {
     Ok(())
 }
 
-fn default_property_draw_fn<'a>(
+/// To reduce generated code, this is the default drawing of the widgets, as a free function.
+fn default_property_draw_fn(
     ui: &mut Ui,
     name: Option<WidgetText>,
     description: Option<WidgetText>,
     validation_result: Result<(), ValidationError>,
     draw_description: bool,
-    widget_cb: Box<PropertyWidgetFn<'a>>,
+    widget_cb: Box<PropertyWidgetFn<'_>>,
 ) -> bool {
     if let Some(name) = name {
         ui.label(name);
@@ -873,7 +899,7 @@ macro_rules! enum_property {
 
             let mut valid = true;
             for property in p_list {
-                valid = property.draw(ui,include_description) & valid;
+                valid &= property.draw(ui,include_description);
             }
 
             valid
