@@ -27,9 +27,10 @@
 use egui::emath::Align;
 use egui::{
     Align2, Color32, Context, Direction, DragValue, FontId, Grid, Id, Layout, Rect, Response,
-    Stroke, StrokeKind, Ui, UiBuilder, Vec2, WidgetText,
+    Stroke, StrokeKind, TextEdit, Ui, UiBuilder, Vec2, Widget, WidgetText,
 };
 use std::fmt::{Display, Formatter};
+use std::time::Duration;
 
 /// A property editor is a builder that combines multiple `Property`s and drawing-related settings.
 ///
@@ -68,7 +69,24 @@ impl<'a> PropertyEditor<'a> {
     /// Show the property editor, consuming it.
     ///
     /// Will return `true` if all properties validated `Ok(())`, or `false` if one or more shows an error.
-    pub fn show(mut self, ui: &mut Ui) -> bool {
+    pub fn show(self, ui: &mut Ui) -> bool {
+        // ensure its a vertical layout.
+        if ui.layout().main_dir == Direction::TopDown {
+            self.show_outer(ui)
+        } else {
+            ui.vertical(|ui| self.show_outer(ui)).inner
+        }
+    }
+
+    /// The outer part of show, after things are assured to be in a vertical layout.
+    fn show_outer(mut self, ui: &mut Ui) -> bool {
+        // should not happen, since show() assures a vertical layout. But who knows, and without all drawing dies.
+        debug_assert_eq!(
+            ui.layout().main_dir,
+            Direction::TopDown,
+            "Property editor must be within a top down layout"
+        );
+
         let persistent_id = ui.make_persistent_id(self.id);
         let mut store = PropertyEditorStore::load(ui.ctx(), persistent_id).unwrap_or_default();
         // the property editor is always left to right
@@ -78,11 +96,6 @@ impl<'a> PropertyEditor<'a> {
         let ui_rect = if store.first_pass {
             available_rect
         } else {
-            debug_assert_eq!(
-                ui.layout().main_dir,
-                Direction::TopDown,
-                "Property editor must be within a top down layout"
-            );
             match ui.layout().cross_align {
                 Align::Min => available_rect,
                 Align::Center => Rect::from_center_size(
@@ -617,7 +630,7 @@ impl<'a, T: 'a> ValidatedProperty<'a, T> {
 
 impl<'a> From<&'a mut String> for Property<'a> {
     fn from(value: &'a mut String) -> Self {
-        Self::from_widget_fn(|ui| ui.text_edit_singleline(value))
+        Self::from_widget_fn(|ui| ui.add(TextEdit::singleline(value).clip_text(true)))
     }
 }
 
@@ -644,6 +657,136 @@ numeric_impl!(u8, i8, u16, i16, u32, i32, u64, i64, usize, isize, f32, f64);
 impl<'a> From<&'a mut bool> for Property<'a> {
     fn from(value: &'a mut bool) -> Self {
         Self::from_widget_fn(|ui| ui.checkbox(value, ""))
+    }
+}
+
+impl<'a> From<&'a mut Duration> for Property<'a> {
+    fn from(value: &'a mut Duration) -> Self {
+        Self::from_widget_fn(|ui| {
+            let mut secs = value.as_secs_f64();
+            let step_size = if secs < 60.0 {
+                if secs > 1e-9 {
+                    10.0f64.powf(secs.log10().floor())
+                } else {
+                    1e-9
+                }
+            } else if secs < 60.0 * 60.0 {
+                60.0
+            } else if secs < 60.0 * 60.0 * 24.0 {
+                60.0 * 60.0
+            } else {
+                60.0 * 60.0 * 24.0
+            };
+            // adjust for speed
+            let speed = step_size / 25.0;
+            let resp = DragValue::new(&mut secs)
+                .speed(speed)
+                .max_decimals(3)
+                .range(0.0..=f64::MAX)
+                .custom_formatter(|val, range| {
+                    let decimals = range.max().unwrap_or(3);
+                    // seconds and below
+                    if val < 60.0 {
+                        let (multiplier, unit) = if val < 1e-6 {
+                            (1e9, "ns")
+                        } else if val < 1e-3 {
+                            (1e6, "µs")
+                        } else if val < 1.0 {
+                            (1e3, "ms")
+                        } else {
+                            (1.0, "s")
+                        };
+                        format!(
+                            "{value:.prec$} {unit}",
+                            value = val * multiplier,
+                            prec = decimals
+                        )
+                    } else if val < 60.0 * 60.0 {
+                        let minutes = value.as_secs() / 60;
+                        let secs = value.as_secs_f64() % 60.0;
+                        format!("{minutes}:{secs:.2}")
+                    } else if val < 60.0 * 60.0 * 24.0 {
+                        let hours = value.as_secs() / (60 * 60);
+                        let minutes = (value.as_secs() % (60 * 60)) / 60;
+                        let secs = value.as_secs() % 60;
+                        format!("{hours}:{minutes}:{secs}")
+                    } else {
+                        let days = value.as_secs() / (60 * 60 * 24);
+                        let hours = (value.as_secs() % (60 * 60 * 24)) / (60 * 60);
+                        let minutes = (value.as_secs() % (60 * 60)) / 60;
+                        let secs = value.as_secs() % 60;
+                        format!("{days}:{hours}:{minutes}:{secs}")
+                    }
+                })
+                .custom_parser(|s| {
+                    // simple case: just a number
+                    s.parse::<f64>().ok().or_else(|| {
+                        // case two: number + unit
+                        let unit_split_pos = s.find(|s: char| {
+                            (!s.is_ascii_digit() && s != 'e' && s != '-' && s != '.')
+                                || s.is_whitespace()
+                        });
+                        let result = if let Some((left, right)) =
+                            unit_split_pos.and_then(|pos| s.split_at_checked(pos))
+                        {
+                            let num = left.trim();
+                            let unit = right.trim().to_lowercase();
+                            num.parse::<f64>().ok().and_then(|num| match unit.as_str() {
+                                "ns" => Some(num * 1e-9),
+                                "us" | "µs" => Some(num * 1e-6),
+                                "ms" => Some(num * 1e-3),
+                                "" | "s" => Some(num),
+                                "m" | "min" | "minutes" => Some(num * 60.0),
+                                "h" | "hour" | "hours" => Some(num * 60.0 * 60.0),
+                                "d" | "day" | "days" => Some(num * 60.0 * 60.0 * 24.0),
+                                _ => None,
+                            })
+                        } else {
+                            None
+                        };
+                        // last attempt: a:b:c format
+                        result.or_else(|| {
+                            let splits: Vec<_> = s.split(":").collect();
+                            let (d, h, m, secs) = match splits.len() {
+                                2 => (None, None, Some(splits[0]), Some(splits[1])),
+                                3 => (None, Some(splits[0]), Some(splits[1]), Some(splits[2])),
+                                4 => (
+                                    Some(splits[0]),
+                                    Some(splits[1]),
+                                    Some(splits[2]),
+                                    Some(splits[3]),
+                                ),
+                                _ => return None,
+                            };
+                            let seconds_d = if let Some(d) = d {
+                                d.parse::<f64>().ok()? * 60.0 * 60.0 * 24.0
+                            } else {
+                                0.0
+                            };
+                            let seconds_h = if let Some(h) = h {
+                                h.parse::<f64>().ok()? * 60.0 * 60.0
+                            } else {
+                                0.0
+                            };
+                            let seconds_m = if let Some(m) = m {
+                                m.parse::<f64>().ok()? * 60.0
+                            } else {
+                                0.0
+                            };
+                            let seconds = if let Some(secs) = secs {
+                                secs.parse::<f64>().ok()?
+                            } else {
+                                0.0
+                            };
+                            Some(seconds_d + seconds_h + seconds_m + seconds)
+                        })
+                    })
+                })
+                .ui(ui)
+                .on_hover_text("Both d:m:h:s and <value> <unit> (such as 1h, 10s, 5ms) are valid.");
+            *value = Duration::from_secs_f64(secs);
+            resp
+        })
     }
 }
 
@@ -769,16 +912,20 @@ fn default_property_draw_fn(
 #[macro_export]
 macro_rules! unit_enum_property {
     ($value:expr, $($name:path),+ $(,)?) => {
-         unit_enum_property!(@inner $value, $([$value] => [$name]),*)
+         unit_enum_property!(@inner $value, $([$name]),*)
     };
-    (@inner $value:expr, $([$($value_tt:tt)*] => [$($name_tt:tt)*]),*) => {
+    (@inner $value:expr, $([$($name_tt:tt)*]),*) => {
         $crate::Property::from_widget_fn(|ui| {
+            // we need a way to arbitrarily take both references and values.
+            use std::ops::DerefMut;
+            let mut value = &mut $value;
+            let value = value.deref_mut();
             egui::ComboBox::new(ui.next_auto_id(),"")
-            .selected_text($value.to_string())
+            .selected_text(value.to_string())
             .show_ui(ui,|ui| {
                 $(
-                    if ui.selectable_label(matches!($($value_tt)*,$($name_tt)*),$($name_tt)*.to_string()).clicked() {
-                        $value = $($name_tt)*;
+                    if ui.selectable_label(matches!(value,$($name_tt)*),$($name_tt)*.to_string()).clicked() {
+                        *value = $($name_tt)*;
                     };
                 )*
             }).response
@@ -856,6 +1003,10 @@ macro_rules! enum_property {
     }
     ),+ $(,)*) => {
         $crate::Property::from_custom_draw_fn(Box::new(|ui,name,description,validation_result,include_description| {
+            // we need a way to arbitrarily take both references and values.
+            use std::ops::DerefMut;
+            let mut value = &mut $value;
+            let value = value.deref_mut();
             if let Some(name) = name {
                 ui.label(name);
             } else {
@@ -863,11 +1014,11 @@ macro_rules! enum_property {
             }
 
             egui::ComboBox::new(ui.next_auto_id(),"")
-            .selected_text($display_fn(&$value))
+            .selected_text($display_fn(value))
             .show_ui(ui,|ui| {
                 $(
                     {
-                        let checked = match $value {
+                        let checked = match value {
                             #[allow(unused)]
                             $name => true,
                             _ => false,
@@ -876,7 +1027,7 @@ macro_rules! enum_property {
                         if ui.selectable_label(checked,name).clicked() {
                             // do not reset if we click on an already clicked one
                             if !checked {
-                                $value = $default
+                                *value = $default
                             }
                         }
                     }
@@ -892,7 +1043,7 @@ macro_rules! enum_property {
             }
             ui.end_row();
 
-            let p_list : $crate::PropertyList = match &mut $value {
+            let p_list : $crate::PropertyList = match value {
                 $($name => $property_block)*
                 _ => vec![],
             };

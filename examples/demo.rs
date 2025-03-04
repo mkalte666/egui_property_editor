@@ -7,6 +7,7 @@ use egui_property_editor::{
     Property, PropertyEditor, ValidatedProperty, ValidationError, enum_property, unit_enum_property,
 };
 use std::fmt::Formatter;
+use std::time::Duration;
 
 /// Entry point for the eframe app
 fn main() {
@@ -32,6 +33,7 @@ struct App {
     an_int: i32,
     another_thing: usize,
     a_bool: bool,
+    a_duration: Duration,
     something_optional: Option<String>,
     optional_struct: Option<InnerThingWithDefault>,
     selection: UnitEnum,
@@ -106,6 +108,7 @@ impl Default for App {
             an_int: 123,
             another_thing: 0,
             a_bool: false,
+            a_duration: Duration::from_secs(128),
             something_optional: None,
             optional_struct: None,
             selection: UnitEnum::OptionA,
@@ -199,6 +202,7 @@ impl eframe::App for App {
                                 }
                             }),
                         )
+                        .named_property("A duration", &mut self.a_duration)
                         .headline("Optional things exist")
                         // Now this is a bit more complicated.
                         // Options can be added, with an additional checkbox to say if they are there or not.
@@ -304,7 +308,7 @@ impl eframe::App for App {
                         .property((
                             "custom display",
                             enum_property!(
-                                self.value_enum2,
+                                &mut self.value_enum2,
                                 custom_to_string,
                                 ValueEnum::Nothing => {
                                     default: ValueEnum::Nothing;
