@@ -823,6 +823,27 @@ where
     }
 }
 
+/// If you have an Option<String>, and want empty strings to result in None, you can use this helper wrapper.
+pub struct EmptyStringIsNone<'a>(pub &'a mut Option<String>);
+
+impl<'a> From<EmptyStringIsNone<'a>> for Property<'a> {
+    fn from(value: EmptyStringIsNone<'a>) -> Self {
+        Property::from_widget_fn(|ui| {
+            let (response, empty) = {
+                let name = value.0.get_or_insert("".to_string());
+                (
+                    TextEdit::singleline(name).clip_text(true).ui(ui),
+                    name.is_empty(),
+                )
+            };
+            if empty {
+                *value.0 = None;
+            }
+            response
+        })
+    }
+}
+
 /// The default validation function just validates to `Ok(())`
 fn default_validation_cb<T>(_val: &T) -> Result<(), ValidationError> {
     Ok(())

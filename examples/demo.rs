@@ -4,7 +4,8 @@ use eframe::Frame;
 use eframe::emath::Align;
 use egui::{CentralPanel, ComboBox, Context, Layout, RichText, ScrollArea};
 use egui_property_editor::{
-    Property, PropertyEditor, ValidatedProperty, ValidationError, enum_property, unit_enum_property,
+    EmptyStringIsNone, Property, PropertyEditor, ValidatedProperty, ValidationError, enum_property,
+    unit_enum_property,
 };
 use std::fmt::Formatter;
 use std::time::Duration;
@@ -38,8 +39,10 @@ struct App {
     optional_struct: Option<InnerThingWithDefault>,
     selection: UnitEnum,
     selection2: UnitEnum,
+    selection3: UnitEnum,
     value_enum: ValueEnum,
     value_enum2: ValueEnum,
+    optional_string: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -113,8 +116,10 @@ impl Default for App {
             optional_struct: None,
             selection: UnitEnum::OptionA,
             selection2: UnitEnum::OptionA,
+            selection3: UnitEnum::OptionA,
             value_enum: ValueEnum::Nothing,
             value_enum2: ValueEnum::Nothing,
+            optional_string: None,
         }
     }
 }
@@ -275,6 +280,15 @@ impl eframe::App for App {
                                 UnitEnum::OptionC
                             ),
                         ))
+                        .property((
+                            "enum, with helper2",
+                            unit_enum_property!(
+                                &mut self.selection3, // You can use &mut or direct var names. 
+                                UnitEnum::OptionA,
+                                // you can leave things out. 
+                                UnitEnum::OptionC
+                            )
+                            ))
                         // While you can manually do value enums, id not.
                         // You *still* need to impl display for this, or provide a display fn.
                         .property((
@@ -325,12 +339,14 @@ impl eframe::App for App {
                                 // you can also leave out properties. They will then not appear.
                             ),
                         ))
+                        .property(("Optional string",EmptyStringIsNone(&mut self.optional_string),"This is an Option<String>!"))
                         .show(ui);
                     if second_valid {
                         ui.label("Second property editor was valid");
                     } else {
                         ui.label("Validation failed somewhere in the second property editor");
                     }
+                    ui.label(format!("The Option<String> that we made a property with EmptyStringIsNone is currently: {:?}",&self.optional_string));
                 });
                 // Finally, another one, just to show (and test) that it goes on the right as well.
                 ui.with_layout(Layout::top_down(Align::Max), |ui| {
