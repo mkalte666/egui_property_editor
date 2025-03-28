@@ -665,7 +665,9 @@ impl<'a> From<&'a mut Duration> for Property<'a> {
         Self::from_widget_fn(|ui| {
             let mut secs = value.as_secs_f64();
             let step_size = if secs < 60.0 {
-                if secs > 1e-9 {
+                if secs == 0.0 {
+                    1.0
+                } else if secs > 1e-9 {
                     10.0f64.powf(secs.log10().floor())
                 } else {
                     1e-9
@@ -687,7 +689,9 @@ impl<'a> From<&'a mut Duration> for Property<'a> {
                     let decimals = range.max().unwrap_or(3);
                     // seconds and below
                     if val < 60.0 {
-                        let (multiplier, unit) = if val < 1e-6 {
+                        let (multiplier, unit) = if val == 0.0 {
+                            (1.0, "s")
+                        } else if val < 1e-6 {
                             (1e9, "ns")
                         } else if val < 1e-3 {
                             (1e6, "µs")
@@ -704,18 +708,18 @@ impl<'a> From<&'a mut Duration> for Property<'a> {
                     } else if val < 60.0 * 60.0 {
                         let minutes = value.as_secs() / 60;
                         let secs = value.as_secs_f64() % 60.0;
-                        format!("{minutes}:{secs:.2}")
+                        format!("{minutes:0>2}:{secs:.2}")
                     } else if val < 60.0 * 60.0 * 24.0 {
                         let hours = value.as_secs() / (60 * 60);
                         let minutes = (value.as_secs() % (60 * 60)) / 60;
                         let secs = value.as_secs() % 60;
-                        format!("{hours}:{minutes}:{secs}")
+                        format!("{hours:0>2}:{minutes:0>2}:{secs:0>2}")
                     } else {
                         let days = value.as_secs() / (60 * 60 * 24);
                         let hours = (value.as_secs() % (60 * 60 * 24)) / (60 * 60);
                         let minutes = (value.as_secs() % (60 * 60)) / 60;
                         let secs = value.as_secs() % 60;
-                        format!("{days}:{hours}:{minutes}:{secs}")
+                        format!("{days:0>2}:{hours:0>2}:{minutes:0>2}:{secs:0>2}")
                     }
                 })
                 .custom_parser(|s| {
