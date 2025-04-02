@@ -219,6 +219,12 @@ impl<'a> PropertyEditor<'a> {
         self
     }
 
+    /// Set to true to always show description column
+    pub fn show_descriptions(mut self, show_descriptions: bool) -> Self {
+        self.show_descriptions = show_descriptions;
+        self
+    }
+
     /// Add a headline.
     ///
     /// As with all content-adding functions, insertion order matters.
