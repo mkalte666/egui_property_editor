@@ -26,8 +26,9 @@
 //! ```
 use egui::emath::Align;
 use egui::{
-    Align2, Color32, Context, Direction, DragValue, FontId, Grid, Id, Layout, Rect, Response,
-    Stroke, StrokeKind, TextEdit, TextWrapMode, Ui, UiBuilder, Vec2, Widget, WidgetText,
+    Align2, Color32, Context, Direction, DragValue, FontId, FontSelection, Grid, Id, Layout, Rect,
+    Response, Sense, Stroke, StrokeKind, TextEdit, TextWrapMode, Ui, UiBuilder, Vec2, Widget,
+    WidgetText,
 };
 use std::fmt::{Display, Formatter};
 use std::time::Duration;
@@ -152,26 +153,34 @@ impl<'a> PropertyEditor<'a> {
     /// Shows the inner ui (i.e inside a possible border) for this.
     ///
     fn inner_ui(&mut self, ui: &mut Ui) -> bool {
+        let headline_width = ui.available_width() * 0.9;
         let mut validation_result = true;
         let mut entries = std::mem::take(&mut self.entries).into_iter().peekable();
-        while let Some(entry) = entries.next() {
-            match entry {
-                EditorLine::Headline(line) => {
-                    ui.add_space(self.headline_spacing.y);
-                    ui.horizontal(|ui| {
-                        ui.add_space(self.headline_spacing.x);
-                        ui.label(line.clone());
-                    });
-                }
-                EditorLine::Property(p) => {
-                    let columns = if self.show_descriptions { 3 } else { 2 };
-                    let mut grid = Grid::new(ui.next_auto_id())
-                        .striped(self.show_stripes)
-                        .num_columns(columns);
-                    if let Some(width) = &self.min_column_width {
-                        grid = grid.min_col_width(*width);
+        let columns = if self.show_descriptions { 3 } else { 2 };
+        let mut grid = Grid::new(ui.next_auto_id())
+            .striped(self.show_stripes)
+            .num_columns(columns);
+        if let Some(width) = &self.min_column_width {
+            grid = grid.min_col_width(*width);
+        }
+        grid.show(ui, |ui| {
+            while let Some(entry) = entries.next() {
+                match entry {
+                    EditorLine::Headline(line) => {
+                        let text_pos = ui.cursor().min + Vec2::Y * ui.spacing().item_spacing.y;
+                        let galley =
+                            line.into_galley(ui, None, headline_width, FontSelection::Default);
+                        ui.allocate_response(
+                            Vec2::X * 1.0
+                                + Vec2::Y
+                                    * (galley.rect.height() + 2.0 * ui.spacing().item_spacing.y),
+                            Sense::empty(),
+                        );
+                        ui.end_row();
+                        ui.painter()
+                            .galley(text_pos, galley.clone(), ui.visuals().text_color());
                     }
-                    grid.show(ui, |ui| {
+                    EditorLine::Property(p) => {
                         validation_result &= p.draw(ui, self.show_descriptions);
                         // usually id agree, but this is more readable IMO.
                         #[allow(clippy::while_let_loop)]
@@ -183,10 +192,10 @@ impl<'a> PropertyEditor<'a> {
                                 _ => break,
                             }
                         }
-                    });
+                    }
                 }
             }
-        }
+        });
 
         validation_result
     }
@@ -475,7 +484,10 @@ impl<'a> Property<'a> {
             ui.checkbox(&mut cb, "");
             if draw_descr {
                 if let Some(description) = description {
-                    ui.label(description);
+                    ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                        ui.style_mut().wrap_mode = Some(TextWrapMode::Wrap);
+                        ui.label(description)
+                    });
                 } else {
                     ui.label("");
                 }
@@ -881,7 +893,10 @@ fn default_property_draw_fn(
 
     if draw_description {
         if let Some(description) = description {
-            ui.label(description);
+            ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                ui.style_mut().wrap_mode = Some(TextWrapMode::Wrap);
+                ui.label(description)
+            });
         } else {
             ui.label("");
         }

@@ -143,7 +143,7 @@ impl eframe::App for App {
                     .named_property("A string", &mut self.some_string)
                     .named_property("Some other String", &mut self.some_other_string)
                     .headline("Another headline")
-                    .property(("C String", &mut self.c,"Strings the C"))
+                    .property(("C String", &mut self.c,"Strings the C. Also a very very very very very very long description, to show that wrapping in the last column works. How much text do i need for this? I don't know."))
                     .named_property("D String", &mut self.d)
                     // Validation is done with a callback. As of writing this there aren't too many variants for the ValidationError.
                     // This is because you quite likely will want to write custom messages anyway.
@@ -186,7 +186,7 @@ impl eframe::App for App {
                         // Note that tuples with (Into<WidgetText>,Into<Property>) and (Into<WidgetText>,Into<Property>,Into<WidgetText>)
                         // also impl Into<Property>, and add name and/or description. That will become important later!
                         .property(("C String", &mut self.c))
-                        .property(("D String", &mut self.d, "The string with name d"))
+                        .property(("D String", &mut self.d, "The string with name d. "))
                         // You could also do a custom widget. Note that the callback needs to return the Response of the widget.
                         .property((
                             "E String",
