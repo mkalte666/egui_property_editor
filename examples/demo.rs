@@ -143,7 +143,7 @@ impl eframe::App for App {
                     .named_property("A string", &mut self.some_string)
                     .named_property("Some other String", &mut self.some_other_string)
                     .headline("Another headline")
-                    .named_property("C String", &mut self.c)
+                    .property(("C String", &mut self.c,"Strings the C"))
                     .named_property("D String", &mut self.d)
                     // Validation is done with a callback. As of writing this there aren't too many variants for the ValidationError.
                     // This is because you quite likely will want to write custom messages anyway.
@@ -354,7 +354,6 @@ impl eframe::App for App {
                     let _third_valid = PropertyEditor::new("editor right")
                         .stripes(true)
                         .outer_border(true)
-                        .min_col_width(Some(125.0))
                         .headline("Should still be on the left")
                         .named_property("A string", &mut self.some_string)
                         .named_property("Some other String", &mut self.some_other_string)

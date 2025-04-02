@@ -27,7 +27,7 @@
 use egui::emath::Align;
 use egui::{
     Align2, Color32, Context, Direction, DragValue, FontId, Grid, Id, Layout, Rect, Response,
-    Stroke, StrokeKind, TextEdit, Ui, UiBuilder, Vec2, Widget, WidgetText,
+    Stroke, StrokeKind, TextEdit, TextWrapMode, Ui, UiBuilder, Vec2, Widget, WidgetText,
 };
 use std::fmt::{Display, Formatter};
 use std::time::Duration;
@@ -70,12 +70,11 @@ impl<'a> PropertyEditor<'a> {
     ///
     /// Will return `true` if all properties validated `Ok(())`, or `false` if one or more shows an error.
     pub fn show(self, ui: &mut Ui) -> bool {
-        // ensure its a vertical layout.
-        if ui.layout().main_dir == Direction::TopDown {
+        // Always use this layout, but copy the alignment (so we can be centered as it pleases).
+        ui.with_layout(Layout::top_down(ui.layout().horizontal_align()), |ui| {
             self.show_outer(ui)
-        } else {
-            ui.vertical(|ui| self.show_outer(ui)).inner
-        }
+        })
+        .inner
     }
 
     /// The outer part of show, after things are assured to be in a vertical layout.
@@ -92,7 +91,7 @@ impl<'a> PropertyEditor<'a> {
         // the property editor is always left to right
         // however its position might vary depending on the layout.
         // The first pass must be left to right though, or we would not know the required size.
-        let available_rect = ui.max_rect().intersect(ui.cursor());
+        let available_rect = ui.available_rect_before_wrap().intersect(ui.cursor());
         let ui_rect = if store.first_pass {
             available_rect
         } else {
@@ -166,14 +165,12 @@ impl<'a> PropertyEditor<'a> {
                 }
                 EditorLine::Property(p) => {
                     let columns = if self.show_descriptions { 3 } else { 2 };
-                    let grid = Grid::new(ui.next_auto_id())
+                    let mut grid = Grid::new(ui.next_auto_id())
                         .striped(self.show_stripes)
                         .num_columns(columns);
-                    let grid = if let Some(width) = &self.min_column_width {
-                        grid.min_col_width(*width)
-                    } else {
-                        grid
-                    };
+                    if let Some(width) = &self.min_column_width {
+                        grid = grid.min_col_width(*width);
+                    }
                     grid.show(ui, |ui| {
                         validation_result &= p.draw(ui, self.show_descriptions);
                         // usually id agree, but this is more readable IMO.
@@ -636,7 +633,13 @@ impl<'a, T: 'a> ValidatedProperty<'a, T> {
 
 impl<'a> From<&'a mut String> for Property<'a> {
     fn from(value: &'a mut String) -> Self {
-        Self::from_widget_fn(|ui| ui.add(TextEdit::singleline(value).clip_text(true)))
+        Self::from_widget_fn(|ui| {
+            ui.add(
+                TextEdit::singleline(value)
+                    .min_size(Vec2::X * 125.0)
+                    .clip_text(true),
+            )
+        })
     }
 }
 
