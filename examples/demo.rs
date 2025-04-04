@@ -217,14 +217,14 @@ impl eframe::App for App {
                             "Include another string?",
                             &mut self.something_optional,
                             String::new(),
-                            |s| [("Optional String", s).into()].into(),
+                            |_ui, s| [("Optional String", s).into()].into(),
                         )
                         // And all normal features can be used inside. You cam these, though not with the PropertyEditor convencience functions.
                         // Look at the `Property::new_optional` function, which PropertyEditor calls for this.
                         .optional_property_default(
                             "This one options a struct",
                             &mut self.optional_struct,
-                            |s| {
+                            |_ui, s| {
                                 [
                                     ("member string", &mut s.string).into(),
                                     (

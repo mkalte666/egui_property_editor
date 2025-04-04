@@ -281,7 +281,7 @@ impl<'a> PropertyEditor<'a> {
         name: impl Into<WidgetText>,
         value: &'a mut Option<T>,
         default: T,
-        property_cb: impl FnOnce(&'a mut T) -> PropertyList<'a> + 'a,
+        property_cb: impl FnOnce(&Ui, &'a mut T) -> PropertyList<'a> + 'a,
     ) -> Self {
         self.property(Property::new_optional(
             name,
@@ -297,7 +297,7 @@ impl<'a> PropertyEditor<'a> {
         self,
         name: impl Into<WidgetText>,
         value: &'a mut Option<T>,
-        property_cb: impl FnOnce(&'a mut T) -> PropertyList<'a> + 'a,
+        property_cb: impl FnOnce(&Ui, &'a mut T) -> PropertyList<'a> + 'a,
     ) -> Self {
         self.property(Property::new_optional(
             name,
@@ -472,7 +472,7 @@ impl<'a> Property<'a> {
         description: Option<impl Into<WidgetText>>,
         value: &'a mut Option<T>,
         default: T,
-        property_cb: impl FnOnce(&'a mut T) -> PropertyList<'a> + 'a,
+        property_cb: impl FnOnce(&Ui, &'a mut T) -> PropertyList<'a> + 'a,
     ) -> Self {
         let custom_draw_fn = move |ui: &mut Ui, name, description, _, draw_descr| -> bool {
             let mut cb = value.is_some();
@@ -503,7 +503,7 @@ impl<'a> Property<'a> {
             }
             let mut inner_validation_result = true;
             if let Some(val) = value {
-                for p in property_cb(val) {
+                for p in property_cb(ui, val) {
                     inner_validation_result &= p.draw(ui, draw_descr);
                 }
             }
