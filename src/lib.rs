@@ -25,11 +25,7 @@
 //! # });
 //! ```
 use egui::emath::Align;
-use egui::{
-    Align2, Color32, Context, Direction, DragValue, FontId, FontSelection, Grid, Id, Layout, Rect,
-    Response, Sense, Stroke, StrokeKind, TextEdit, TextWrapMode, Ui, UiBuilder, Vec2, Widget,
-    WidgetText,
-};
+use egui::{Align2, Color32, Context, Direction, DragValue, FontId, FontSelection, Grid, Id, Layout, Rect, Response, Sense, Stroke, StrokeKind, TextEdit, TextWrapMode, Ui, UiBuilder, Vec2, Widget, WidgetText};
 use std::fmt::{Display, Formatter};
 use std::time::Duration;
 
@@ -139,6 +135,7 @@ impl<'a> PropertyEditor<'a> {
             final_inner_rect
         };
         ui.advance_cursor_after_rect(final_rect);
+        
         // sizing pass?
         if store.first_pass || store.last_width != final_rect.width() {
             ui.ctx().request_discard("Property editor size changed");
@@ -161,7 +158,9 @@ impl<'a> PropertyEditor<'a> {
             .striped(self.show_stripes)
             .num_columns(columns);
         if let Some(width) = &self.min_column_width {
-            grid = grid.min_col_width(*width);
+            let max_width = ui.available_width() / columns as f32 - ui.spacing().item_spacing.x * columns.saturating_sub(1) as f32;
+            let width = width.min(max_width);
+            grid = grid.min_col_width(width);
         }
         grid.show(ui, |ui| {
             while let Some(entry) = entries.next() {
