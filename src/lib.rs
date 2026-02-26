@@ -25,7 +25,11 @@
 //! # });
 //! ```
 use egui::emath::Align;
-use egui::{Align2, Color32, Context, Direction, DragValue, FontId, FontSelection, Grid, Id, Layout, Rect, Response, Sense, Stroke, StrokeKind, TextEdit, TextWrapMode, Ui, UiBuilder, Vec2, Widget, WidgetText};
+use egui::{
+    Align2, Color32, Context, Direction, DragValue, FontId, FontSelection, Grid, Id, Layout, Rect,
+    Response, Sense, Stroke, StrokeKind, TextEdit, TextWrapMode, Ui, UiBuilder, Vec2, Widget,
+    WidgetText,
+};
 use std::fmt::{Display, Formatter};
 use std::time::Duration;
 
@@ -135,7 +139,7 @@ impl<'a> PropertyEditor<'a> {
             final_inner_rect
         };
         ui.advance_cursor_after_rect(final_rect);
-        
+
         // sizing pass?
         if store.first_pass || store.last_width != final_rect.width() {
             ui.ctx().request_discard("Property editor size changed");
@@ -158,7 +162,8 @@ impl<'a> PropertyEditor<'a> {
             .striped(self.show_stripes)
             .num_columns(columns);
         if let Some(width) = &self.min_column_width {
-            let max_width = ui.available_width() / columns as f32 - ui.spacing().item_spacing.x * columns.saturating_sub(1) as f32;
+            let max_width = ui.available_width() / columns as f32
+                - ui.spacing().item_spacing.x * columns.saturating_sub(1) as f32;
             let width = width.min(max_width);
             grid = grid.min_col_width(width);
         }
@@ -725,10 +730,6 @@ impl<'a> From<&'a mut Duration> for Property<'a> {
                             value = val * multiplier,
                             prec = decimals
                         )
-                    } else if val < 60.0 * 60.0 {
-                        let minutes = value.as_secs() / 60;
-                        let secs = value.as_secs_f64() % 60.0;
-                        format!("{minutes:0>2}:{secs:.2}")
                     } else if val < 60.0 * 60.0 * 24.0 {
                         let hours = value.as_secs() / (60 * 60);
                         let minutes = (value.as_secs() % (60 * 60)) / 60;
